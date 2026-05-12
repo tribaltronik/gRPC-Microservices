@@ -1,0 +1,21 @@
+syntax = "proto3";
+
+package common.v1;
+
+option go_package = "common/v1;commonv1";
+
+// Pagination for list requests
+message Pagination {
+  // Page number (1-indexed)
+  int32 page = 1;
+  // Number of items per page (max 100)
+  int32 page_size = 2;
+}
+
+// Pagination metadata for list responses
+message PaginationResponse {
+  // Total number of items matching the query
+  int32 total_count = 1;
+  // Whether there are more pages
+  bool has_more = 2;
+}

@@ -1,0 +1,14 @@
+version: v2
+modules:
+  - path: proto
+deps:
+  - buf.build/googleapis/googleapis
+  - buf.build/protocolbuffers/wellknowntypes
+lint:
+  use:
+    - STANDARD
+    - COMMENTS
+    - PACKAGE_NO_IMPORT_CYCLE
+breaking:
+  use:
+    - FILE

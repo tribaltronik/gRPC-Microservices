@@ -1,0 +1,41 @@
+# Binaries
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+/tmp/
+
+# Go
+vendor/
+/go/
+/bin/
+*.mod
+*.sum
+
+# Proto generated
+services/*/pb/
+
+# Certs
+certs/
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Buf
+buf.lock

@@ -1,0 +1,10 @@
+FROM hashicorp/vault:1.15
+
+RUN apk add --no-cache jq
+
+COPY scripts/init-vault.sh /scripts/init-vault.sh
+COPY vault/policies /vault/policies
+
+RUN chmod +x /scripts/init-vault.sh
+
+ENTRYPOINT ["/bin/sh", "/scripts/init-vault.sh"]

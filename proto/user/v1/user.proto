@@ -1,0 +1,110 @@
+syntax = "proto3";
+
+package user.v1;
+
+option go_package = "user/v1;userv1";
+
+import "google/api/annotations.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/field_mask.proto";
+
+// User resource
+message User {
+  // Unique identifier (UUID v4)
+  string id = 1;
+  // Full name of the user
+  string name = 2;
+  // Email address (unique per user)
+  string email = 3;
+  // Timestamp when the user was created
+  google.protobuf.Timestamp created_at = 4;
+  // Timestamp when the user was last updated
+  google.protobuf.Timestamp updated_at = 5;
+}
+
+// Request to create a new user
+message CreateUserRequest {
+  // Name of the user (1-100 characters)
+  string name = 1;
+  // Email address (must be valid format)
+  string email = 2;
+}
+
+// Response after creating a user
+message CreateUserResponse {
+  // The created user
+  User user = 1;
+}
+
+// Request to get a user by ID
+message GetUserRequest {
+  // UUID of the user
+  string id = 1;
+}
+
+// Response containing the requested user
+message GetUserResponse {
+  // The requested user
+  User user = 1;
+}
+
+// Request to update a user
+message UpdateUserRequest {
+  // UUID of the user to update
+  string id = 1;
+  // Updated user data (only fields set in the mask will be applied)
+  User user = 2;
+  // Field mask specifying which fields to update
+  google.protobuf.FieldMask update_mask = 3;
+}
+
+// Response after updating a user
+message UpdateUserResponse {
+  // The updated user
+  User user = 1;
+}
+
+// Request to delete a user
+message DeleteUserRequest {
+  // UUID of the user to delete
+  string id = 1;
+}
+
+// Response after deleting a user
+message DeleteUserResponse {
+  // Confirmation message
+  string message = 1;
+}
+
+// User service with CRUD operations
+service UserService {
+  // Create a new user
+  rpc CreateUser(CreateUserRequest) returns (CreateUserResponse) {
+    option (google.api.http) = {
+      post: "/api/v1/users"
+      body: "*"
+    };
+  }
+
+  // Get a user by ID
+  rpc GetUser(GetUserRequest) returns (GetUserResponse) {
+    option (google.api.http) = {
+      get: "/api/v1/users/{id}"
+    };
+  }
+
+  // Update a user (partial update via field mask)
+  rpc UpdateUser(UpdateUserRequest) returns (UpdateUserResponse) {
+    option (google.api.http) = {
+      patch: "/api/v1/users/{id}"
+      body: "*"
+    };
+  }
+
+  // Delete a user
+  rpc DeleteUser(DeleteUserRequest) returns (DeleteUserResponse) {
+    option (google.api.http) = {
+      delete: "/api/v1/users/{id}"
+    };
+  }
+}

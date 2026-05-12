@@ -1,0 +1,16 @@
+version: v2
+managed:
+  enabled: true
+  override:
+    - file_option: go_package_prefix
+      value: github.com/tiagoricardo/grpc-microservices/services/
+  disable:
+    - module: buf.build/googleapis/googleapis
+    - module: buf.build/protocolbuffers/wellknowntypes
+plugins:
+  - local: protoc-gen-go
+    out: services
+    opt: paths=source_relative
+  - local: protoc-gen-go-grpc
+    out: services
+    opt: paths=source_relative,require_unimplemented_servers=true
