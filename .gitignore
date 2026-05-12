@@ -37,5 +37,8 @@ certs/
 .DS_Store
 Thumbs.db
 
+# Vault
+vault/tokens/
+
 # Buf
 buf.lock

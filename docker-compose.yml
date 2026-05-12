@@ -5,14 +5,15 @@ services:
     environment:
       VAULT_DEV_ROOT_TOKEN_ID: root
       VAULT_DEV_LISTEN_ADDRESS: 0.0.0.0:8200
+      VAULT_ADDR: http://127.0.0.1:8200
     ports: ["8200:8200"]
     networks: [backend]
     healthcheck:
       test: ["CMD", "vault", "status"]
-      interval: 5s
-      timeout: 3s
-      retries: 10
-      start_period: 5s
+      interval: 3s
+      timeout: 2s
+      retries: 15
+      start_period: 10s
 
   vault-init:
     build:
@@ -113,6 +114,7 @@ services:
       PORT: "50052"
       LOG_LEVEL: debug
       USER_SERVICE_ADDR: user-service:50051
+      REDIS_URL: redis://redis:6379/0
       TLS_CERT_FILE: /certs/order-service/cert.pem
       TLS_KEY_FILE: /certs/order-service/key.pem
       TLS_CA_FILE: /certs/ca/ca.pem
@@ -133,8 +135,8 @@ services:
 
   ext-authz:
     build:
-      context: ./envoy/ext_authz
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: envoy/ext_authz/Dockerfile
     ports: ["50053:50053"]
     environment:
       PORT: "50053"
@@ -153,7 +155,7 @@ services:
       - "8080:8080"
       - "9901:9901"
     volumes:
-      - ./certs:/certs:ro
+      - ./certs:/etc/envoy/certs:ro
     depends_on:
       user-service:
         condition: service_started

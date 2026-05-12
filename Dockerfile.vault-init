@@ -1,6 +1,6 @@
 FROM hashicorp/vault:1.15
 
-RUN apk add --no-cache jq
+RUN apk add --no-cache jq curl
 
 COPY scripts/init-vault.sh /scripts/init-vault.sh
 COPY vault/policies /vault/policies

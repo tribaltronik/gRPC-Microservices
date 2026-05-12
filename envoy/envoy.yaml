@@ -60,10 +60,6 @@ static_resources:
                   allowed_headers:
                     patterns:
                     - exact: "x-api-key"
-                  allowed_upstream_headers:
-                    patterns:
-                    - exact: "x-user-id"
-                    - exact: "x-user-email"
           - name: envoy.filters.http.local_ratelimit
             typed_config:
               "@type": type.googleapis.com/envoy.extensions.filters.http.local_ratelimit.v3.LocalRateLimit

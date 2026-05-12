@@ -1,9 +1,9 @@
-#!/bin/bash
-set -euo pipefail
+#!/bin/sh
+set -eu
 
 VAULT_ADDR="${VAULT_ADDR:-http://localhost:8200}"
 VAULT_TOKEN="${VAULT_TOKEN:-root}"
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="${PROJECT_DIR:-$(cd "$SCRIPT_DIR/.." && pwd)}"
 
 echo "=== Initializing Vault ==="
@@ -23,7 +23,7 @@ for i in $(seq 1 30); do
   sleep 1
 done
 
-alias vault-cmd="vault"
+
 
 # Login
 echo "[2/8] Logging in..."
@@ -57,17 +57,17 @@ echo "[5/8] Creating database roles..."
 
 vault write -address="$VAULT_ADDR" database/roles/user-service \
   db_name=user-db \
-  creation_statements="CREATE USER \"{{name}}\" WITH PASSWORD '{{password}}' VALID UNTIL '{{expiration}}'; GRANT USAGE ON SCHEMA public TO \"{{name}}\"; GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO \"{{name}}\";" \
+  creation_statements="CREATE USER \"{{name}}\" WITH PASSWORD '{{password}}' VALID UNTIL '{{expiration}}'; GRANT USAGE, CREATE ON SCHEMA public TO \"{{name}}\"; GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO \"{{name}}\"; ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO \"{{name}}\";" \
   revocation_statements="DROP USER IF EXISTS \"{{name}}\";" \
   default_ttl=1h \
-  max_ttl=24h 2>/dev/null || echo "  user-service role already exists"
+  max_ttl=24h
 
 vault write -address="$VAULT_ADDR" database/roles/order-service \
   db_name=order-db \
-  creation_statements="CREATE USER \"{{name}}\" WITH PASSWORD '{{password}}' VALID UNTIL '{{expiration}}'; GRANT USAGE ON SCHEMA public TO \"{{name}}\"; GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO \"{{name}}\";" \
+  creation_statements="CREATE USER \"{{name}}\" WITH PASSWORD '{{password}}' VALID UNTIL '{{expiration}}'; GRANT USAGE, CREATE ON SCHEMA public TO \"{{name}}\"; GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO \"{{name}}\"; ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO \"{{name}}\";" \
   revocation_statements="DROP USER IF EXISTS \"{{name}}\";" \
   default_ttl=1h \
-  max_ttl=24h 2>/dev/null || echo "  order-service role already exists"
+  max_ttl=24h
 
 # Store static secrets
 echo "[6/8] Storing static secrets..."
@@ -99,7 +99,7 @@ vault token create -address="$VAULT_ADDR" -policy=user-service -period=168h -for
 vault token create -address="$VAULT_ADDR" -policy=order-service -period=168h -format=json 2>/dev/null \
   | jq -r '.auth.client_token' > "$TOKENS_DIR/order-service.token" || echo "  using existing token"
 
-chmod 600 "$TOKENS_DIR"/*.token 2>/dev/null || true
+chmod 644 "$TOKENS_DIR"/*.token 2>/dev/null || true
 
 echo ""
 echo "=== Vault initialization complete ==="
