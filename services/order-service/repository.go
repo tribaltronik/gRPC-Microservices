@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -14,7 +15,10 @@ import (
 	"github.com/tiagoricardo/grpc-microservices/services/order/v1"
 )
 
+const dbQueryTimeout = 10 * time.Second
+
 type OrderRepository struct {
+	mu    sync.RWMutex
 	pool  *pgxpool.Pool
 	rdb   *redis.Client
 	log   *zap.Logger
@@ -39,8 +43,31 @@ func NewOrderRepository(pool *pgxpool.Pool, rdb *redis.Client, log *zap.Logger) 
 	}
 }
 
+func (r *OrderRepository) getPool() *pgxpool.Pool {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return r.pool
+}
+
+func (r *OrderRepository) SetPool(pool *pgxpool.Pool) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	old := r.pool
+	r.pool = pool
+	if old != nil {
+		old.Close()
+	}
+}
+
+func (r *OrderRepository) queryTimeout(ctx context.Context) (context.Context, context.CancelFunc) {
+	return context.WithTimeout(ctx, dbQueryTimeout)
+}
+
 func (r *OrderRepository) Create(ctx context.Context, userID string, items []*orderv1.OrderItem) (*orderv1.Order, error) {
-	tx, err := r.pool.Begin(ctx)
+	qCtx, cancel := r.queryTimeout(ctx)
+	defer cancel()
+
+	tx, err := r.getPool().Begin(qCtx)
 	if err != nil {
 		return nil, fmt.Errorf("begin tx: %w", err)
 	}
@@ -53,7 +80,7 @@ func (r *OrderRepository) Create(ctx context.Context, userID string, items []*or
 	}
 
 	var createdAt time.Time
-	err = tx.QueryRow(ctx,
+	err = tx.QueryRow(qCtx,
 		`INSERT INTO orders (id, user_id, total) VALUES ($1, $2, $3)
 		 RETURNING created_at`,
 		orderID, userID, total,
@@ -64,7 +91,7 @@ func (r *OrderRepository) Create(ctx context.Context, userID string, items []*or
 
 	for _, item := range items {
 		itemID := uuid.New().String()
-		_, err = tx.Exec(ctx,
+		_, err = tx.Exec(qCtx,
 			`INSERT INTO order_items (id, order_id, product_id, product_name, quantity, unit_price)
 			 VALUES ($1, $2, $3, $4, $5, $6)`,
 			itemID, orderID, item.ProductId, item.ProductName, item.Quantity, item.UnitPrice,
@@ -74,7 +101,7 @@ func (r *OrderRepository) Create(ctx context.Context, userID string, items []*or
 		}
 	}
 
-	if err := tx.Commit(ctx); err != nil {
+	if err := tx.Commit(qCtx); err != nil {
 		return nil, fmt.Errorf("commit tx: %w", err)
 	}
 
@@ -91,10 +118,11 @@ func (r *OrderRepository) Create(ctx context.Context, userID string, items []*or
 }
 
 func (r *OrderRepository) Get(ctx context.Context, id string) (*orderv1.Order, error) {
-	// Try cache first
-	if cached, err := r.cache.Get(ctx, id); err == nil && cached != nil {
-		r.log.Debug("cache hit for order", zap.String("id", id))
-		return cached, nil
+	if r.rdb != nil {
+		if cached, err := r.cache.Get(ctx, id); err == nil && cached != nil {
+			r.log.Debug("cache hit for order", zap.String("id", id))
+			return cached, nil
+		}
 	}
 
 	order, err := r.getFromDB(ctx, id)
@@ -105,20 +133,24 @@ func (r *OrderRepository) Get(ctx context.Context, id string) (*orderv1.Order, e
 		return nil, nil
 	}
 
-	// Write to cache (async, non-blocking)
-	if err := r.cache.Set(ctx, order); err != nil {
-		r.log.Warn("failed to cache order", zap.String("id", id), zap.Error(err))
+	if r.rdb != nil {
+		if err := r.cache.Set(ctx, order); err != nil {
+			r.log.Warn("failed to cache order", zap.String("id", id), zap.Error(err))
+		}
 	}
 
 	return order, nil
 }
 
 func (r *OrderRepository) getFromDB(ctx context.Context, id string) (*orderv1.Order, error) {
+	qCtx, cancel := r.queryTimeout(ctx)
+	defer cancel()
+
 	var userID, status string
 	var total float64
 	var createdAt time.Time
 
-	err := r.pool.QueryRow(ctx,
+	err := r.getPool().QueryRow(qCtx,
 		`SELECT user_id, status, total, created_at FROM orders WHERE id = $1`, id,
 	).Scan(&userID, &status, &total, &createdAt)
 	if err != nil {
@@ -144,7 +176,10 @@ func (r *OrderRepository) getFromDB(ctx context.Context, id string) (*orderv1.Or
 }
 
 func (r *OrderRepository) getItems(ctx context.Context, orderID string) ([]*orderv1.OrderItem, error) {
-	rows, err := r.pool.Query(ctx,
+	qCtx, cancel := r.queryTimeout(ctx)
+	defer cancel()
+
+	rows, err := r.getPool().Query(qCtx,
 		`SELECT product_id, product_name, quantity, unit_price
 		 FROM order_items WHERE order_id = $1`, orderID,
 	)
@@ -173,7 +208,9 @@ func (r *OrderRepository) List(ctx context.Context, userID string, page, pageSiz
 	}
 	offset := (page - 1) * pageSize
 
-	// Count total
+	qCtx, cancel := r.queryTimeout(ctx)
+	defer cancel()
+
 	var total int32
 	countQuery := `SELECT COUNT(*) FROM orders`
 	countArgs := []interface{}{}
@@ -181,11 +218,10 @@ func (r *OrderRepository) List(ctx context.Context, userID string, page, pageSiz
 		countQuery += ` WHERE user_id = $1`
 		countArgs = append(countArgs, userID)
 	}
-	if err := r.pool.QueryRow(ctx, countQuery, countArgs...).Scan(&total); err != nil {
+	if err := r.getPool().QueryRow(qCtx, countQuery, countArgs...).Scan(&total); err != nil {
 		return nil, 0, fmt.Errorf("count orders: %w", err)
 	}
 
-	// Fetch page
 	listQuery := `SELECT id, user_id, status, total, created_at FROM orders`
 	listArgs := []interface{}{}
 	argIdx := 1
@@ -197,7 +233,7 @@ func (r *OrderRepository) List(ctx context.Context, userID string, page, pageSiz
 	listQuery += ` ORDER BY created_at DESC LIMIT $` + fmt.Sprintf("%d", argIdx) + ` OFFSET $` + fmt.Sprintf("%d", argIdx+1)
 	listArgs = append(listArgs, pageSize, offset)
 
-	rows, err := r.pool.Query(ctx, listQuery, listArgs...)
+	rows, err := r.getPool().Query(qCtx, listQuery, listArgs...)
 	if err != nil {
 		return nil, 0, fmt.Errorf("list orders: %w", err)
 	}
@@ -226,8 +262,11 @@ func (r *OrderRepository) List(ctx context.Context, userID string, page, pageSiz
 }
 
 func (r *OrderRepository) Cancel(ctx context.Context, id string) (*orderv1.Order, error) {
+	qCtx, cancel := r.queryTimeout(ctx)
+	defer cancel()
+
 	var status string
-	err := r.pool.QueryRow(ctx,
+	err := r.getPool().QueryRow(qCtx,
 		`UPDATE orders SET status = 'CANCELLED' WHERE id = $1
 		 RETURNING status`, id,
 	).Scan(&status)
@@ -238,10 +277,10 @@ func (r *OrderRepository) Cancel(ctx context.Context, id string) (*orderv1.Order
 		return nil, fmt.Errorf("cancel order: %w", err)
 	}
 
-	// Invalidate cache
-	r.cache.Invalidate(ctx, id)
+	if r.rdb != nil {
+		r.cache.Invalidate(ctx, id)
+	}
 
-	// Re-fetch full order
 	return r.getFromDB(ctx, id)
 }
 

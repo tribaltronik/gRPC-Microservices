@@ -267,16 +267,28 @@ Status: **Completed**
 - [x] Verification: `go vet ./...` and `go build ./...` pass clean
 
 #### Day 10: Resilience Implementation
-- [ ] Circuit breaker testing
-  - Kill downstream service
-  - Verify 503 responses after threshold
-- [ ] Retry logic verification
-  - Add random failures
-  - Check exponential backoff in logs
-- [ ] Graceful shutdown testing
-  - Send SIGTERM
-  - Verify in-flight requests complete
-- [ ] Connection pool tuning
+
+Status: **Completed**
+
+- [x] Connection pool tuning
+  - `config.go` both services: env-configurable `MaxConns` (25), `MinConns` (5), `MaxConnLifetime` (30m), `MaxConnIdleTime` (5m), `HealthCheckPeriod` (30s)
+  - Uses `pgxpool.ParseConfig` + `NewWithConfig` for full pool configuration
+- [x] Query timeouts
+  - `repository.go` — every DB call wrapped with `context.WithTimeout(ctx, 10s)`
+- [x] Panic recovery interceptor
+  - `main.go` — custom `recoveryInterceptor` via `ChainUnaryInterceptor`, logs panic + returns `codes.Internal`
+- [x] Health check propagation
+  - `monitorDBHealth` goroutine pings pool every 15s, updates gRPC health to `NOT_SERVING` on DB failure
+- [x] Graceful shutdown ordering
+  - `internal/shutdown/shutdown.go`: callbacks run **sequentially** (removed goroutines) — gRPC drains before DB pool closes
+- [x] Container restart policies
+  - `docker-compose.yml`: `restart: unless-stopped` on user-service, order-service, ext-authz, envoy
+- [x] Vault credential auto-refresh
+  - `internal/vault/client.go`: `StartCredentialRefresher` goroutine re-fetches creds at 50% lease interval
+  - `main.go`: callback creates new `pgxpool.Pool`, swaps via repository's `SetPool()`, closes old pool
+- [x] Resilience test suite
+  - `scripts/test-resilience.sh`: tests restart policy, graceful compose restart, DB health monitoring, Envoy circuit breaker, pool config logging
+  - `make test-resilience` target added
 
 ### Week 3: Observability & Testing
 

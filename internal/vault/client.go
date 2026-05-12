@@ -16,6 +16,9 @@ type DBCreds struct {
 	LeaseDuration  time.Duration
 }
 
+// DBRefreshFunc is a callback invoked when credentials are refreshed.
+type DBRefreshFunc func(*DBCreds)
+
 // Client wraps the HashiCorp Vault API client.
 type Client struct {
 	client *vapi.Client
@@ -47,7 +50,6 @@ func (c *Client) GetDBCreds(ctx context.Context, role string) (*DBCreds, error) 
 
 	data, ok := secret.Data["data"].(map[string]interface{})
 	if !ok {
-		// KV v1 returns data at top level
 		data = secret.Data
 	}
 
@@ -88,4 +90,41 @@ func (c *Client) RenewLease(ctx context.Context, leaseID string, increment int) 
 		return fmt.Errorf("renew lease %s: %w", leaseID, err)
 	}
 	return nil
+}
+
+// StartCredentialRefresher runs a background goroutine that re-fetches
+// dynamic database credentials at half the lease duration, calling
+// refreshFn with each refreshed credential set. Stops when ctx is cancelled.
+func (c *Client) StartCredentialRefresher(ctx context.Context, role string, refreshFn DBRefreshFunc, logFn func(string, ...interface{})) {
+	go func() {
+		for {
+			creds, err := c.GetDBCreds(ctx, role)
+			if err != nil {
+				if logFn != nil {
+					logFn("vault credential refresh failed", "error", err)
+				}
+				select {
+				case <-ctx.Done():
+					return
+				case <-time.After(30 * time.Second):
+				}
+				continue
+			}
+
+			if refreshFn != nil {
+				refreshFn(creds)
+			}
+
+			interval := creds.LeaseDuration / 2
+			if interval < 30*time.Second {
+				interval = 30 * time.Second
+			}
+
+			select {
+			case <-ctx.Done():
+				return
+			case <-time.After(interval):
+			}
+		}
+	}()
 }

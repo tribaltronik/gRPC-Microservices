@@ -83,6 +83,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.user-service
+    restart: unless-stopped
     ports: ["50051:50051"]
     environment:
       PORT: "50051"
@@ -109,6 +110,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.order-service
+    restart: unless-stopped
     ports: ["50052:50052"]
     environment:
       PORT: "50052"
@@ -137,6 +139,7 @@ services:
     build:
       context: .
       dockerfile: envoy/ext_authz/Dockerfile
+    restart: unless-stopped
     ports: ["50053:50053"]
     environment:
       PORT: "50053"
@@ -151,6 +154,7 @@ services:
     build:
       context: ./envoy
       dockerfile: Dockerfile
+    restart: unless-stopped
     ports:
       - "8080:8080"
       - "9901:9901"

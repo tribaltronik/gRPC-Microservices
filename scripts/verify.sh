@@ -145,7 +145,7 @@ if [ "${1:-}" = "--online" ]; then
     # Vault dynamic credentials
     echo -n "  Vault dynamic DB creds... "
     CREDS=$(docker compose exec -e VAULT_TOKEN=root -T vault vault read -address=http://127.0.0.1:8200 -format=json database/creds/user-service 2>/dev/null || echo "")
-    if echo "$CREDS" | grep -q '"username"'; then
+    if echo "$CREDS" | grep -c '"username"' > /dev/null 2>&1; then
       DURATION=$(echo "$CREDS" | grep -o '"lease_duration":[^,]*' | cut -d: -f2 || echo "unknown")
       pass "Vault generates dynamic DB credentials (lease: ${DURATION}s)"
     else
@@ -155,7 +155,8 @@ if [ "${1:-}" = "--online" ]; then
     # Service logs for startup confirmation
     for svc in user-service order-service; do
       echo -n "  $svc startup... "
-      if docker compose logs "$svc" 2>/dev/null | grep -q "starting $svc"; then
+      matches=$(docker compose logs --tail=50 "$svc" 2>/dev/null | grep -c "starting $svc" || true)
+      if [ "$matches" -gt 0 ]; then
         pass "$svc started successfully"
       else
         fail "$svc startup message not found"

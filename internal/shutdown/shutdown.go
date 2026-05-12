@@ -5,7 +5,6 @@ import (
 	"log"
 	"os"
 	"os/signal"
-	"sync"
 	"syscall"
 	"time"
 )
@@ -28,18 +27,12 @@ func Graceful(ctx context.Context, timeout time.Duration, callbacks ...Callback)
 		log.Printf("received signal %s, starting graceful shutdown", sig)
 	}
 
-	var wg sync.WaitGroup
 	for _, cb := range callbacks {
-		wg.Add(1)
-		go func(c Callback) {
-			defer wg.Done()
-			ctx, cancel := context.WithTimeout(context.Background(), timeout)
-			defer cancel()
-			log.Printf("shutdown: %s", c.Name)
-			if err := c.Func(ctx); err != nil {
-				log.Printf("shutdown %s: %v", c.Name, err)
-			}
-		}(cb)
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), timeout)
+		log.Printf("shutdown: %s", cb.Name)
+		if err := cb.Func(shutdownCtx); err != nil {
+			log.Printf("shutdown %s: %v", cb.Name, err)
+		}
+		cancel()
 	}
-	wg.Wait()
 }

@@ -1,4 +1,4 @@
-.PHONY: up down verify verify-online logs clean certs
+.PHONY: up down verify verify-online test-resilience logs clean certs ps stop
 
 # Deploy full stack
 up: certs
@@ -26,6 +26,10 @@ verify:
 # Run full verification including runtime checks
 verify-online:
 	@scripts/verify.sh --online
+
+# Run resilience test suite (requires running stack)
+test-resilience:
+	@scripts/test-resilience.sh
 
 # Generate certificates only
 certs:

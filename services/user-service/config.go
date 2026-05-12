@@ -2,7 +2,9 @@ package main
 
 import (
 	"os"
+	"strconv"
 	"strings"
+	"time"
 )
 
 type Config struct {
@@ -15,6 +17,13 @@ type Config struct {
 	VaultAddr   string
 	VaultToken  string
 	VaultDBRole string
+
+	DBPoolMaxConns         int32
+	DBPoolMinConns         int32
+	DBPoolMaxConnLifetime  time.Duration
+	DBPoolMaxConnIdleTime  time.Duration
+	DBPoolHealthCheckPeriod time.Duration
+	DBQueryTimeout         time.Duration
 }
 
 func (c Config) UseVault() bool {
@@ -32,6 +41,13 @@ func LoadConfig() Config {
 		VaultAddr:   getEnv("VAULT_ADDR", ""),
 		VaultToken:  loadVaultToken(),
 		VaultDBRole: getEnv("VAULT_DB_ROLE", "user-service"),
+
+		DBPoolMaxConns:          int32(getEnvInt("DB_POOL_MAX_CONNS", 25)),
+		DBPoolMinConns:          int32(getEnvInt("DB_POOL_MIN_CONNS", 5)),
+		DBPoolMaxConnLifetime:   getEnvDuration("DB_POOL_MAX_CONN_LIFETIME", 30*time.Minute),
+		DBPoolMaxConnIdleTime:   getEnvDuration("DB_POOL_MAX_CONN_IDLE_TIME", 5*time.Minute),
+		DBPoolHealthCheckPeriod: getEnvDuration("DB_POOL_HEALTH_CHECK_PERIOD", 30*time.Second),
+		DBQueryTimeout:          getEnvDuration("DB_QUERY_TIMEOUT", 10*time.Second),
 	}
 }
 
@@ -51,6 +67,25 @@ func loadVaultToken() string {
 func getEnv(key, fallback string) string {
 	if val := os.Getenv(key); val != "" {
 		return val
+	}
+	return fallback
+}
+
+func getEnvInt(key string, fallback int) int {
+	if val := os.Getenv(key); val != "" {
+		if i, err := strconv.Atoi(val); err == nil {
+			return i
+		}
+	}
+	return fallback
+}
+
+func getEnvDuration(key string, fallback time.Duration) time.Duration {
+	if val := os.Getenv(key); val != "" {
+		d, err := time.ParseDuration(val)
+		if err == nil {
+			return d
+		}
 	}
 	return fallback
 }

@@ -11,6 +11,7 @@ import (
 	"google.golang.org/grpc/health"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/reflection"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -22,6 +23,21 @@ import (
 	"github.com/tiagoricardo/grpc-microservices/internal/vault"
 	"github.com/tiagoricardo/grpc-microservices/services/user/v1"
 )
+
+func recoveryInterceptor(logger *zap.Logger) grpc.UnaryServerInterceptor {
+	return func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (resp interface{}, err error) {
+		defer func() {
+			if r := recover(); r != nil {
+				logger.Error("panic recovered in gRPC handler",
+					zap.String("method", info.FullMethod),
+					zap.Any("panic", r),
+				)
+				err = status.Error(codes.Internal, "internal server error")
+			}
+		}()
+		return handler(ctx, req)
+	}
+}
 
 func loggingInterceptor(logger *zap.Logger) grpc.UnaryServerInterceptor {
 	return func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
@@ -42,6 +58,60 @@ func loggingInterceptor(logger *zap.Logger) grpc.UnaryServerInterceptor {
 	}
 }
 
+func newPool(ctx context.Context, databaseURL string, cfg Config, logger *zap.Logger) (*pgxpool.Pool, error) {
+	poolCfg, err := pgxpool.ParseConfig(databaseURL)
+	if err != nil {
+		return nil, fmt.Errorf("parse pool config: %w", err)
+	}
+
+	poolCfg.MaxConns = cfg.DBPoolMaxConns
+	poolCfg.MinConns = cfg.DBPoolMinConns
+	poolCfg.MaxConnLifetime = cfg.DBPoolMaxConnLifetime
+	poolCfg.MaxConnIdleTime = cfg.DBPoolMaxConnIdleTime
+	poolCfg.HealthCheckPeriod = cfg.DBPoolHealthCheckPeriod
+
+	logger.Info("database pool configured",
+		zap.Int32("max_conns", cfg.DBPoolMaxConns),
+		zap.Int32("min_conns", cfg.DBPoolMinConns),
+		zap.Duration("max_lifetime", cfg.DBPoolMaxConnLifetime),
+		zap.Duration("health_check", cfg.DBPoolHealthCheckPeriod),
+	)
+
+	pool, err := pgxpool.NewWithConfig(ctx, poolCfg)
+	if err != nil {
+		return nil, fmt.Errorf("create pool: %w", err)
+	}
+	return pool, nil
+}
+
+func buildDatabaseURL(creds *vault.DBCreds) string {
+	return fmt.Sprintf("postgres://%s:%s@user-db:5432/users?sslmode=disable",
+		creds.Username, creds.Password)
+}
+
+func monitorDBHealth(ctx context.Context, pool *pgxpool.Pool, healthServer *health.Server, logger *zap.Logger, interval time.Duration) {
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			pingCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+			err := pool.Ping(pingCtx)
+			cancel()
+
+			if err != nil {
+				logger.Warn("database health check failed", zap.Error(err))
+				healthServer.SetServingStatus("user.v1.UserService", healthpb.HealthCheckResponse_NOT_SERVING)
+			} else {
+				healthServer.SetServingStatus("user.v1.UserService", healthpb.HealthCheckResponse_SERVING)
+			}
+		}
+	}
+}
+
 func main() {
 	cfg := LoadConfig()
 
@@ -55,14 +125,15 @@ func main() {
 
 	ctx := context.Background()
 
-	// Database — use Vault for dynamic credentials if configured
+	var vc *vault.Client
 	databaseURL := cfg.DatabaseURL
+
 	if cfg.UseVault() {
 		logger.Info("fetching database credentials from Vault",
 			zap.String("addr", cfg.VaultAddr),
 			zap.String("role", cfg.VaultDBRole),
 		)
-		vc, err := vault.New(cfg.VaultAddr, cfg.VaultToken)
+		vc, err = vault.New(cfg.VaultAddr, cfg.VaultToken)
 		if err != nil {
 			logger.Fatal("failed to create vault client", zap.Error(err))
 		}
@@ -74,11 +145,10 @@ func main() {
 			zap.String("username", creds.Username),
 			zap.Duration("lease_duration", creds.LeaseDuration),
 		)
-		databaseURL = fmt.Sprintf("postgres://%s:%s@user-db:5432/users?sslmode=disable",
-			creds.Username, creds.Password)
+		databaseURL = buildDatabaseURL(creds)
 	}
 
-	pool, err := pgxpool.New(ctx, databaseURL)
+	pool, err := newPool(ctx, databaseURL, cfg, logger)
 	if err != nil {
 		logger.Fatal("failed to connect to database", zap.Error(err))
 	}
@@ -89,32 +159,51 @@ func main() {
 	}
 	logger.Info("database migrations applied")
 
-	// Repository + Server
 	repo := NewUserRepository(pool)
 	svc := NewUserServiceServer(repo, logger)
 
-	// mTLS
+	if vc != nil {
+		vc.StartCredentialRefresher(ctx, cfg.VaultDBRole,
+			func(creds *vault.DBCreds) {
+				newURL := buildDatabaseURL(creds)
+				logger.Info("vault credentials refreshed, rotating pool",
+					zap.String("username", creds.Username),
+				)
+				newPool, err := newPool(ctx, newURL, cfg, logger)
+				if err != nil {
+					logger.Error("failed to create new pool after credential refresh", zap.Error(err))
+					return
+				}
+				repo.SetPool(newPool)
+			},
+			func(msg string, args ...interface{}) {
+				logger.Sugar().Warnw(msg, args...)
+			},
+		)
+	}
+
 	creds, err := tls.LoadServerConfig(cfg.CertFile, cfg.KeyFile, cfg.CAFile)
 	if err != nil {
 		logger.Fatal("failed to load TLS config", zap.Error(err))
 	}
 
-	// gRPC server
 	grpcServer := grpc.NewServer(
 		grpc.Creds(creds),
-		grpc.UnaryInterceptor(loggingInterceptor(logger)),
+		grpc.ChainUnaryInterceptor(
+			recoveryInterceptor(logger),
+			loggingInterceptor(logger),
+		),
 	)
 	userv1.RegisterUserServiceServer(grpcServer, svc)
 
-	// Health check
 	healthServer := health.NewServer()
 	healthpb.RegisterHealthServer(grpcServer, healthServer)
 	healthServer.SetServingStatus("user.v1.UserService", healthpb.HealthCheckResponse_SERVING)
 
-	// Reflection (for grpcurl)
+	go monitorDBHealth(ctx, pool, healthServer, logger, 15*time.Second)
+
 	reflection.Register(grpcServer)
 
-	// Listen
 	lis, err := net.Listen("tcp", ":"+cfg.Port)
 	if err != nil {
 		logger.Fatal("failed to listen", zap.Error(err))
@@ -127,7 +216,6 @@ func main() {
 		}
 	}()
 
-	// Graceful shutdown
 	shutdown.Graceful(ctx, 30*time.Second,
 		shutdown.Callback{Name: "gRPC server", Func: func(ctx context.Context) error {
 			grpcServer.GracefulStop()
