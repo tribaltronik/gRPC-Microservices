@@ -4,8 +4,10 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"net/http"
 	"time"
 
+	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
 	"go.uber.org/zap"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/health"
@@ -18,6 +20,7 @@ import (
 
 	"github.com/tiagoricardo/grpc-microservices/db/migrations"
 	"github.com/tiagoricardo/grpc-microservices/internal/log"
+	"github.com/tiagoricardo/grpc-microservices/internal/otel"
 	"github.com/tiagoricardo/grpc-microservices/internal/shutdown"
 	"github.com/tiagoricardo/grpc-microservices/internal/tls"
 	"github.com/tiagoricardo/grpc-microservices/internal/vault"
@@ -125,6 +128,11 @@ func main() {
 
 	ctx := context.Background()
 
+	otelInstance, err := otel.New(ctx, "user-service", cfg.OTLPEndpoint)
+	if err != nil {
+		logger.Fatal("failed to init OpenTelemetry", zap.Error(err))
+	}
+
 	var vc *vault.Client
 	databaseURL := cfg.DatabaseURL
 
@@ -189,6 +197,7 @@ func main() {
 
 	grpcServer := grpc.NewServer(
 		grpc.Creds(creds),
+		grpc.StatsHandler(otelgrpc.NewServerHandler()),
 		grpc.ChainUnaryInterceptor(
 			recoveryInterceptor(logger),
 			loggingInterceptor(logger),
@@ -203,6 +212,17 @@ func main() {
 	go monitorDBHealth(ctx, pool, healthServer, logger, 15*time.Second)
 
 	reflection.Register(grpcServer)
+
+	metricsServer := &http.Server{
+		Addr:    ":" + cfg.MetricsPort,
+		Handler: otelInstance.MetricsHandler(),
+	}
+	go func() {
+		logger.Info("serving metrics", zap.String("port", cfg.MetricsPort))
+		if err := metricsServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			logger.Warn("metrics server error", zap.Error(err))
+		}
+	}()
 
 	lis, err := net.Listen("tcp", ":"+cfg.Port)
 	if err != nil {
@@ -220,6 +240,12 @@ func main() {
 		shutdown.Callback{Name: "gRPC server", Func: func(ctx context.Context) error {
 			grpcServer.GracefulStop()
 			return nil
+		}},
+		shutdown.Callback{Name: "OpenTelemetry", Func: func(ctx context.Context) error {
+			return otelInstance.Shutdown(ctx)
+		}},
+		shutdown.Callback{Name: "metrics server", Func: func(ctx context.Context) error {
+			return metricsServer.Shutdown(ctx)
 		}},
 		shutdown.Callback{Name: "database pool", Func: func(ctx context.Context) error {
 			pool.Close()

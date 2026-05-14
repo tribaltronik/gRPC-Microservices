@@ -173,6 +173,63 @@ services:
     tmpfs: [/tmp]
     user: "1000:1000"
 
+  prometheus:
+    image: prom/prometheus:v3.2.1
+    user: "root:root"
+    ports: ["9090:9090"]
+    volumes:
+      - ./monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./monitoring/prometheus/rules.yml:/etc/prometheus/rules.yml:ro
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--web.console.libraries=/usr/share/prometheus/console_libraries"
+      - "--web.console.templates=/usr/share/prometheus/consoles"
+      - "--web.enable-otlp-receiver"
+    networks: [backend]
+    restart: unless-stopped
+    security_opt: [no-new-privileges:true]
+    read_only: true
+    tmpfs: [/prometheus]
+    depends_on:
+      user-service:
+        condition: service_started
+      order-service:
+        condition: service_started
+      envoy:
+        condition: service_started
+
+  grafana:
+    image: grafana/grafana:11.5.2
+    user: "1000:1000"
+    ports: ["3000:3000"]
+    volumes:
+      - ./monitoring/grafana/datasources:/etc/grafana/provisioning/datasources:ro
+      - ./monitoring/grafana/dashboards:/etc/grafana/provisioning/dashboards:ro
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_INSTALL_PLUGINS: ""
+    networks: [backend]
+    restart: unless-stopped
+    security_opt: [no-new-privileges:true]
+    read_only: true
+    tmpfs: [/var/lib/grafana]
+    depends_on:
+      prometheus:
+        condition: service_started
+
+  jaeger:
+    image: jaegertracing/all-in-one:latest
+    ports:
+      - "16686:16686"
+      - "4317:4317"
+      - "4318:4318"
+    environment:
+      COLLECTOR_OTLP_ENABLED: "true"
+    networks: [backend]
+    restart: unless-stopped
+    security_opt: [no-new-privileges:true]
+
 networks:
   frontend:
     driver: bridge

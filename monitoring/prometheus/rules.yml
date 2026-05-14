@@ -1,0 +1,29 @@
+groups:
+  - name: grpc
+    interval: 15s
+    rules:
+      - record: "grpc:requests:rate5m"
+        expr: |
+          rate(rpc_server_call_duration_seconds_count[5m])
+
+      - record: "grpc:errors:rate5m"
+        expr: |
+          rate(rpc_server_call_duration_seconds_count{rpc_response_status_code!="OK"}[5m])
+
+      - record: "grpc:error_ratio:rate5m"
+        expr: |
+          rate(rpc_server_call_duration_seconds_count{rpc_response_status_code!="OK"}[5m])
+          /
+          rate(rpc_server_call_duration_seconds_count[5m])
+
+      - record: "grpc:latency:p95"
+        expr: |
+          histogram_quantile(0.95,
+            sum(rate(rpc_server_call_duration_seconds_bucket[5m])) by (le, service, rpc_method)
+          )
+
+      - record: "grpc:latency:p99"
+        expr: |
+          histogram_quantile(0.99,
+            sum(rate(rpc_server_call_duration_seconds_bucket[5m])) by (le, service, rpc_method)
+          )

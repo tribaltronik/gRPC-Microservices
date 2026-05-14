@@ -14,5 +14,6 @@ USER 1000:1000
 COPY --from=builder /build/order-service /app/order-service
 
 EXPOSE 50052
+EXPOSE 9092
 
 ENTRYPOINT ["/app/order-service"]

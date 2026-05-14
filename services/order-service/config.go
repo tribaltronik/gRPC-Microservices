@@ -19,6 +19,8 @@ type Config struct {
 	VaultAddr       string
 	VaultToken      string
 	VaultDBRole     string
+	OTLPEndpoint    string
+	MetricsPort     string
 
 	DBPoolMaxConns         int32
 	DBPoolMinConns         int32
@@ -45,6 +47,8 @@ func LoadConfig() Config {
 		VaultAddr:       getEnv("VAULT_ADDR", ""),
 		VaultToken:      loadVaultToken(),
 		VaultDBRole:     getEnv("VAULT_DB_ROLE", "order-service"),
+		OTLPEndpoint:   getEnv("OTLP_ENDPOINT", "jaeger:4317"),
+		MetricsPort:    getEnv("METRICS_PORT", "9092"),
 
 		DBPoolMaxConns:          int32(getEnvInt("DB_POOL_MAX_CONNS", 25)),
 		DBPoolMinConns:          int32(getEnvInt("DB_POOL_MIN_CONNS", 5)),
