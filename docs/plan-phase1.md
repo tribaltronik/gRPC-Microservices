@@ -77,7 +77,7 @@ grpc-microservices-poc/
 │   │   ├── user-service.hcl           # Vault policy for user-service
 │   │   └── order-service.hcl          # Vault policy for order-service
 │   └── tokens/                        # (generated)
-├── monitoring/                     # (pending)
+├── monitoring/                     # Prometheus, Grafana configs + dashboards
 ├── scripts/
 │   └── init-vault.sh                  # Vault initialization automation
 └── docs/
@@ -293,21 +293,27 @@ Status: **Completed**
 ### Week 3: Observability & Testing
 
 #### Day 11-12: Monitoring Stack
-- [ ] **Prometheus**
-  - Service discovery (docker labels)
-  - gRPC metrics (grpc_server_handled_total)
-  - Custom business metrics
-  - Recording rules
-- [ ] **Grafana**
-  - Datasource config
-  - Dashboard: RED method (Rate, Errors, Duration)
-  - Dashboard: Resource usage (CPU, memory)
-  - Alerting rules
-- [ ] **Jaeger**
-  - All-in-one container
-  - OpenTelemetry instrumentation in services
-  - Baggage propagation
-  - Sample traces for each endpoint
+
+Status: **Completed**
+
+- [x] **OpenTelemetry SDK** (`internal/otel/otel.go`):
+  - OTLP trace exporter → Jaeger (gRPC, port 4317)
+  - Prometheus metric exporter (bridged via `promhttp`)
+  - Context propagation (TraceContext + Baggage)
+  - `otelgrpc` stats handler for auto-instrumentation on all RPCs
+- [x] **Prometheus**
+  - Service discovery (static configs with labels)
+  - gRPC metrics (`rpc_server_call_duration_seconds_count`, _bucket, _sum)
+  - Recording rules (`grpc:requests:rate5m`, `grpc:errors:rate5m`, `grpc:error_ratio:rate5m`, `grpc:latency:p95`, `grpc:latency:p99`)
+  - OTLP receiver enabled for direct metric ingestion
+- [x] **Grafana**
+  - Datasource config (Prometheus, uid: `prometheus`, default)
+  - Provisioned dashboard: RED method (Rate, Errors, Duration per RPC)
+  - Provisioned dashboard: Service Resources (CPU, memory placeholders)
+- [x] **Jaeger**
+  - All-in-one container (docker-compose, OTLP ingest on 4317, UI on 16686)
+  - OpenTelemetry instrumentation in both services
+  - Traces captured for all endpoints (CreateUser, GetUser, CreateOrder, etc.)
 
 #### Day 13: Integration Tests
 ```python
@@ -451,7 +457,7 @@ def test_create_and_get_user():
 - [ ] `make up` works on fresh machine
 - [ ] Architecture diagram (docs/architecture.png)
 - [ ] All services running with `docker-compose ps`
-- [ ] Grafana dashboards accessible at localhost:3000
+- [x] Grafana dashboards accessible at localhost:3000 (admin:admin)
 - [ ] Load test results in docs/
 - [ ] Security scan report (trivy)
 - [ ] Demo video or GIF in README
