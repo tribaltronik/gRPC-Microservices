@@ -16,6 +16,12 @@ groups:
           /
           rate(rpc_server_call_duration_seconds_count[5m])
 
+      - record: "grpc:latency:p50"
+        expr: |
+          histogram_quantile(0.50,
+            sum(rate(rpc_server_call_duration_seconds_bucket[5m])) by (le, service, rpc_method)
+          )
+
       - record: "grpc:latency:p95"
         expr: |
           histogram_quantile(0.95,
@@ -27,6 +33,46 @@ groups:
           histogram_quantile(0.99,
             sum(rate(rpc_server_call_duration_seconds_bucket[5m])) by (le, service, rpc_method)
           )
+
+      - alert: HighErrorRate
+        expr: |
+          grpc:error_ratio:rate5m > 0.05
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "gRPC error rate above 5% for {{ $labels.service }}/{{ $labels.rpc_method }}"
+          description: "Error rate {{ $value | humanizePercentage }} for {{ $labels.service }}/{{ $labels.rpc_method }}"
+
+      - alert: HighLatency
+        expr: |
+          grpc:latency:p95 > 0.2
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "p95 latency above 200ms for {{ $labels.service }}/{{ $labels.rpc_method }}"
+          description: "p95 latency {{ $value | humanizeDuration }} for {{ $labels.service }}/{{ $labels.rpc_method }}"
+
+      - alert: CircuitBreakerOpen
+        expr: |
+          envoy_cluster_circuit_breakers_default_cx_open > 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Circuit breaker opened for cluster {{ $labels.envoy_cluster_name }}"
+          description: "Envoy circuit breaker is open for {{ $labels.envoy_cluster_name }}. Connections may be rejected."
+
+      - alert: CircuitBreakerPendingOverload
+        expr: |
+          envoy_cluster_upstream_rq_pending_active > 50
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High pending requests for {{ $labels.envoy_cluster_name }}"
+          description: "{{ $value }} pending requests in {{ $labels.envoy_cluster_name }} cluster"
 
   - name: certificates
     interval: 60s

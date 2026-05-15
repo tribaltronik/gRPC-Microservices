@@ -462,18 +462,30 @@ Status: **Completed**
 ## Monitoring & Alerting
 
 ### Key Metrics
-- [ ] Request rate (per service, per endpoint)
-- [ ] Error rate (4xx, 5xx)
-- [ ] Latency (p50, p95, p99)
-- [ ] Circuit breaker state
-- [ ] Connection pool utilization
-- [ ] Database query performance
+- [x] Request rate (per service, per endpoint) — Grafana bar gauge panels for RPS per `{{service}}` and `{{rpc_method}}`
+- [x] Error rate (gRPC status codes) — Grafana timeseries for error ratio and error count
+- [x] Latency (p50, p95, p99) — Recording rules + Grafana panels for all three percentiles
+- [x] Circuit breaker state — Envoy metrics scraped by Prometheus; `CircuitBreakerOpen` alert configured
+- [ ] Connection pool utilization — deferred to Phase 2 (needs pgx pool instrumentation)
+- [ ] Database query performance — deferred to Phase 2 (needs pgx query tracer)
 
-### Alerts (for Phase 2)
-- Error rate > 5% for 5min
-- p95 latency > 200ms
-- Circuit breaker open
-- Certificate expiry < 7 days
+### Prometheus Rules
+- **Recording rules** (group `grpc`, interval 15s):
+  - `grpc:requests:rate5m` — request rate per service/method
+  - `grpc:errors:rate5m` — error rate per service/method
+  - `grpc:error_ratio:rate5m` — error / total ratio
+  - `grpc:latency:p50` — median latency
+  - `grpc:latency:p95` — 95th percentile latency
+  - `grpc:latency:p99` — 99th percentile latency
+
+### Alerts
+- [x] **HighErrorRate** — error ratio > 5% for 5 minutes (warning)
+- [x] **HighLatency** — p95 latency > 200ms for 5 minutes (warning)
+- [x] **CircuitBreakerOpen** — Envoy circuit breaker connections open (critical)
+- [x] **CircuitBreakerPendingOverload** — pending requests > 50 in Envoy cluster (warning)
+- [x] **CertificateExpiringSoon** — cert expires in < 7 days (warning, from cert-exporter)
+- [x] **CertificateExpired** — cert has expired (critical, from cert-exporter)
+- [ ] Alertmanager + notification channels (Slack/email) — Phase 2
 
 ---
 
