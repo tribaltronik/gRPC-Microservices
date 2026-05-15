@@ -435,27 +435,27 @@ Status: **Completed**
 ## Testing Strategy
 
 ### Unit Tests
-- [ ] Proto validation
-- [ ] Business logic coverage > 80%
-- [ ] Mock gRPC clients for dependencies
+- [ ] Proto validation — deferred to Phase 2 (needs protoc-gen-validate annotations)
+- [ ] Business logic coverage > 80% — deferred to Phase 2 (needs testify/mock framework)
+- [ ] Mock gRPC clients — deferred to Phase 2 (needs interface refactoring)
 
 ### Integration Tests
-- [ ] End-to-end API flows
-- [ ] Database interactions
-- [ ] Service-to-service communication
-- [ ] Error propagation
+- [x] End-to-end API flows — full CRUD lifecycle: Create→Get→Update→Delete (user), Create→Get→List→Cancel (order)
+- [x] Database interactions — real PostgreSQL 16 via gRPC services with Vault dynamic credentials
+- [x] Service-to-service communication — order-service calls user-service GetUser for CreateOrder validation
+- [x] Error propagation — InvalidArgument (15+ cases), NotFound (8 cases), AlreadyExists (duplicate email), Internal (DB failure)
 
 ### Load Tests
-- [ ] Baseline performance metrics
-- [ ] Chaos scenarios (kill pods)
-- [ ] Resource limits testing
-- [ ] Latency under load (p50, p95, p99)
+- [x] Baseline performance metrics — 2 scenarios (25 VUs/30s: 10,474 req, 14.0 rps; 50 VUs/20s: 7,234 req, 7.2 rps)
+- [x] Chaos scenarios — kill user-service during load, verify circuit breaker, restart, verify recovery
+- [ ] Resource limits testing — connection pool saturation identified; explicit CPU/memory limit tests deferred to Phase 2
+- [x] Latency under load — p50/p95/p99 reported per operation in docs/load-test-report.md
 
 ### Security Tests
-- [x] mTLS validation (reject invalid certs)
-- [x] Auth bypass attempts (missing/invalid API key → 401)
-- [ ] SQL injection attempts
-- [ ] Container escape attempts
+- [x] mTLS validation — 3 test cases: valid cert succeeds, wrong cert rejected (Unavailable), no cert rejected
+- [x] Auth bypass attempts — 4 test cases: missing key (401), invalid key (401), valid key (ok), error body verified
+- [ ] SQL injection attempts — mitigated via pgx parameterized queries; no automated exploit test
+- [ ] Container escape attempts — mitigated via distroless images, read-only FS, no-new-privileges; no automated test
 
 ---
 
