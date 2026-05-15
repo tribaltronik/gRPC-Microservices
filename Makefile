@@ -1,4 +1,4 @@
-.PHONY: up down verify verify-online test-resilience logs clean certs ps stop
+.PHONY: up down verify verify-online test-resilience test-integration test-integration-auth test-integration-mtls test-integration-resilience logs clean certs ps stop
 
 # Deploy full stack
 up: certs
@@ -30,6 +30,28 @@ verify-online:
 # Run resilience test suite (requires running stack)
 test-resilience:
 	@scripts/test-resilience.sh
+
+# Run integration tests (requires running stack)
+.PHONY: test-integration test-integration-auth test-integration-mtls test-integration-resilience
+
+test-integration:
+	@echo "=== Installing test dependencies ==="
+	@pip install -q -r tests/requirements.txt
+	@echo "=== Running integration tests ==="
+	@python -m pytest tests/ -v --tb=short
+	@echo "=== All tests passed ==="
+
+test-integration-auth:
+	@pip install -q -r tests/requirements.txt
+	@python -m pytest tests/test_auth.py -v --tb=short
+
+test-integration-mtls:
+	@pip install -q -r tests/requirements.txt
+	@python -m pytest tests/test_mtls.py -v --tb=short
+
+test-integration-resilience:
+	@pip install -q -r tests/requirements.txt
+	@python -m pytest tests/test_resilience.py -v --tb=short
 
 # Generate certificates only
 certs:

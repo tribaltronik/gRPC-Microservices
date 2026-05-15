@@ -1,6 +1,6 @@
 CREATE TABLE IF NOT EXISTS orders (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    user_id UUID NOT NULL REFERENCES users(id),
+    user_id UUID NOT NULL,
     status VARCHAR(20) NOT NULL DEFAULT 'PENDING',
     total NUMERIC(10,2) NOT NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
