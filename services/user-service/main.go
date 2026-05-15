@@ -197,6 +197,7 @@ func main() {
 
 	grpcServer := grpc.NewServer(
 		grpc.Creds(creds),
+		grpc.MaxRecvMsgSize(4 * 1024 * 1024),
 		grpc.StatsHandler(otelgrpc.NewServerHandler()),
 		grpc.ChainUnaryInterceptor(
 			recoveryInterceptor(logger),

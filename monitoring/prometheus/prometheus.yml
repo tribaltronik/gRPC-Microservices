@@ -24,3 +24,9 @@ scrape_configs:
       - targets: ["envoy:9901"]
         labels:
           service: "envoy"
+
+  - job_name: "cert-exporter"
+    static_configs:
+      - targets: ["cert-exporter:9810"]
+        labels:
+          service: "cert-exporter"

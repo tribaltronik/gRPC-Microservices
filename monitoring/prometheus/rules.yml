@@ -27,3 +27,26 @@ groups:
           histogram_quantile(0.99,
             sum(rate(rpc_server_call_duration_seconds_bucket[5m])) by (le, service, rpc_method)
           )
+
+  - name: certificates
+    interval: 60s
+    rules:
+      - alert: CertificateExpiringSoon
+        expr: |
+          x509_cert_not_after{job=~"user-service|order-service"} - time() < 604800
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "TLS certificate for {{ $labels.job }} expires in {{ $value | humanizeDuration }}"
+          description: "Certificate {{ $labels.job }} expires in less than 7 days. Rotate immediately."
+
+      - alert: CertificateExpired
+        expr: |
+          x509_cert_not_after{job=~"user-service|order-service"} < time()
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "TLS certificate for {{ $labels.job }} has expired"
+          description: "Certificate {{ $labels.job }} expired. Service mTLS may be broken."

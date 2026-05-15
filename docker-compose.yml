@@ -40,7 +40,6 @@ services:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
       POSTGRES_DB: users
-    ports: ["5432:5432"]
     networks: [backend]
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
@@ -57,7 +56,6 @@ services:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
       POSTGRES_DB: orders
-    ports: ["5433:5432"]
     networks: [backend]
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
@@ -70,7 +68,6 @@ services:
 
   redis:
     image: redis:7-alpine
-    ports: ["6379:6379"]
     networks: [backend]
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
@@ -140,7 +137,6 @@ services:
       context: .
       dockerfile: envoy/ext_authz/Dockerfile
     restart: unless-stopped
-    ports: ["50053:50053"]
     environment:
       PORT: "50053"
       API_KEY: grpc-poc-api-key-2026
@@ -229,6 +225,18 @@ services:
     networks: [backend]
     restart: unless-stopped
     security_opt: [no-new-privileges:true]
+
+  cert-exporter:
+    image: ghcr.io/tschifftner/cert-exporter:latest
+    volumes:
+      - ./certs:/certs:ro
+    environment:
+      CERT_DIRS: "/certs/user-service,/certs/order-service,/certs/api-gateway"
+      LISTEN_PORT: "9810"
+    networks: [backend]
+    restart: unless-stopped
+    security_opt: [no-new-privileges:true]
+    read_only: true
 
 networks:
   frontend:

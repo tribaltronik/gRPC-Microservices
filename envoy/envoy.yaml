@@ -44,6 +44,8 @@ static_resources:
                     retry_back_off:
                       base_interval: 0.25s
                       max_interval: 2s
+          max_request_bytes: 10485760
+          max_headers_count: 100
           http_filters:
           - name: envoy.filters.http.ext_authz
             typed_config:
