@@ -1,4 +1,4 @@
-.PHONY: up down verify verify-online test-resilience test-integration test-integration-auth test-integration-mtls test-integration-resilience logs clean certs ps stop
+.PHONY: up down verify verify-online test-resilience test-integration test-integration-auth test-integration-mtls test-integration-resilience load-test load-test-heavy load-test-chaos logs clean certs ps stop
 
 # Deploy full stack
 up: certs
@@ -52,6 +52,25 @@ test-integration-mtls:
 test-integration-resilience:
 	@pip install -q -r tests/requirements.txt
 	@python -m pytest tests/test_resilience.py -v --tb=short
+
+# Run load test (Go gRPC load tester)
+.PHONY: load-test load-test-heavy load-test-chaos
+
+load-test:
+	@echo "=== Building load tester ==="
+	@go build -o /tmp/loadtest ./scripts/loadtest/
+	@echo "=== Running load test ==="
+	@/tmp/loadtest --vus=25 --duration=30s
+
+load-test-heavy:
+	@echo "=== Building load tester ==="
+	@go build -o /tmp/loadtest ./scripts/loadtest/
+	@echo "=== Running heavy load test ==="
+	@/tmp/loadtest --vus=50 --duration=30s
+
+load-test-chaos:
+	@echo "=== Running chaos load test ==="
+	@scripts/load-test-chaos.sh
 
 # Generate certificates only
 certs:
