@@ -1,0 +1,18 @@
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: order-service
+  namespace: grpc-services
+spec:
+  secretName: order-service-tls
+  duration: 8760h
+  renewBefore: 720h
+  issuerRef:
+    name: phase1-ca-issuer
+    kind: ClusterIssuer
+  dnsNames:
+  - order-service
+  - order-service.grpc-services.svc
+  - order-service.grpc-services.svc.cluster.local
+  - localhost
+  - 127.0.0.1

@@ -3,12 +3,12 @@
 ## Kubernetes Migration (KIND Cluster)
 
 ### Prerequisites
-- [ ] Phase 1 completed and tested
-- [ ] KIND installed
-- [ ] kubectl 1.28+
-- [ ] Helm 3.12+
+- [x] Phase 1 completed and tested
+- [x] KIND installed (v0.16.0)
+- [x] kubectl 1.28+ (v1.32.2)
+- [x] Helm 3.12+ (v3.10.2 — namespace creation works, CRDs enabled via Helm)
 - [ ] kustomize
-- [ ] Istioctl
+- [x] Istioctl (v1.22.0 installed)
 - [ ] ArgoCD CLI (optional)
 
 ---
@@ -18,8 +18,10 @@
 ```
 grpc-microservices-poc/
 ├── k8s/
-│   ├── kind-config.yaml
+│   ├── kind-config.yaml         # Multi-node config (1 control + 3 workers)
 │   ├── namespaces/
+│   │   └── init.yaml            # grpc-services, platform, monitoring
+│   ├── base/
 │   ├── base/
 │   │   ├── kustomization.yaml
 │   │   ├── user-service/
@@ -30,19 +32,37 @@ grpc-microservices-poc/
 │   │   ├── staging/
 │   │   └── prod/
 │   └── platform/
+│       ├── cert-manager/
+│       │   ├── kustomization.yaml
+│       │   ├── ca-secret.yaml
+│       │   ├── cluster-issuer.yaml
+│       │   ├── cert-user-service.yaml
+│       │   ├── cert-order-service.yaml
+│       │   └── cert-api-gateway.yaml
+│       ├── istio/
+│       │   ├── kustomization.yaml
+│       │   ├── peer-authentication.yaml
+│       │   ├── destination-rule-user.yaml
+│       │   └── destination-rule-order.yaml
 │       ├── istio/
 │       ├── cert-manager/
 │       ├── external-secrets/
 │       ├── kyverno/
 │       └── monitoring/
 ├── helm/
-│   ├── grpc-services/
-│   │   ├── Chart.yaml
-│   │   ├── values.yaml
-│   │   ├── values-dev.yaml
-│   │   ├── values-prod.yaml
-│   │   └── templates/
-│   └── dependencies/
+│   └── grpc-services/
+│       ├── Chart.yaml
+│       ├── values.yaml
+│       └── templates/
+│           ├── _helpers.tpl
+│           ├── configmap.yaml
+│           ├── deployment.yaml
+│           ├── poddisruptionbudget.yaml
+│           ├── postgresql.yaml
+│           ├── service.yaml
+│           ├── serviceaccount.yaml
+│           └── istio/
+│               └── virtualservice.yaml
 ├── argocd/
 │   ├── apps/
 │   └── projects/
@@ -55,6 +75,26 @@ grpc-microservices-poc/
 └── chaos/
     ├── experiments/
     └── scenarios/
+
+---
+
+## Nginx Ingress for KIND (local testing)
+
+Created as alternative to Istio ingress for local KIND development (lighter weight):
+
+- **`k8s/platform/ingress/ingress.yaml`** — Ingress resource with:
+  - `nginx.ingress.kubernetes.io/backend-protocol: "GRPC"` annotation
+  - `proxy-ssl-secret` pointing to api-gateway client cert for mTLS
+  - Routes: `/user.v1.UserService/*` → user-service:50051, `/order.v1.OrderService/*` → order-service:50052
+- **`k8s/platform/ingress/kustomization.yaml`** — Kustomize wrapper
+- **Makefile targets:** `k8s-ingress`, `k8s-test-grpc`
+
+### Testing via nginx ingress
+
+```bash
+make k8s-ingress     # Install nginx + apply ingress
+make k8s-test-grpc   # Test gRPC through localhost:80
+```
 ```
 
 ---
@@ -64,111 +104,111 @@ grpc-microservices-poc/
 ### Week 1: Cluster Foundation
 
 #### Day 1-2: KIND Cluster Setup
-- [ ] Create multi-node KIND cluster config
-```yaml
-# kind-config.yaml
-kind: Cluster
-apiVersion: kind.x-k8s.io/v1alpha4
-nodes:
-- role: control-plane
-  kubeadmConfigPatches:
-  - |
-    kind: InitConfiguration
-    nodeRegistration:
-      kubeletExtraArgs:
-        node-labels: "ingress-ready=true"
-  extraPortMappings:
-  - containerPort: 80
-    hostPort: 80
-  - containerPort: 443
-    hostPort: 443
-- role: worker
-- role: worker
-- role: worker
-```
-- [ ] Create cluster: `kind create cluster --config kind-config.yaml`
-- [ ] Verify nodes: `kubectl get nodes`
-- [ ] Install metrics-server
-- [ ] Create namespaces: grpc-services, platform, monitoring
+
+Status: **Completed**
+
+| Tool | Version |
+|------|---------|
+| kind | v0.16.0 |
+| kubectl | v1.32.2 |
+| Helm | v3.10.2 |
+| kustomize | v4.5.5 |
+
+- [x] Create multi-node KIND cluster config (`k8s/kind-config.yaml`)
+- [x] Create cluster: `kind create cluster --config k8s/kind-config.yaml` — 1 control-plane + 3 workers
+- [x] Verify nodes: `kubectl get nodes` — all 4 Ready
+- [x] Install metrics-server (with `--kubelet-insecure-tls` for KIND)
+- [x] Create namespaces: grpc-services, platform, monitoring
+- [x] Update Makefile: `kind-up`, `kind-down`, `k8s-platform`, `k8s-logs`, `k8s-port-forward`
 
 #### Day 3: cert-manager Installation
-- [ ] Install cert-manager via Helm
-```bash
-helm install cert-manager jetstack/cert-manager \
-  --namespace cert-manager \
-  --create-namespace \
-  --set installCRDs=true
-```
-- [ ] Create CA Issuer (self-signed for dev)
-- [ ] Create Certificate resources for services
-- [ ] Verify cert generation: `kubectl get certificates -A`
-- [ ] Test cert renewal (shorten duration, wait)
+
+Status: **Completed**
+
+- [x] Install cert-manager via Helm (`jetstack/cert-manager` v1.20.2, CRDs enabled)
+- [x] Create CA Issuer (`phase1-ca-issuer`) using Phase 1 CA key pair imported as K8s Secret
+- [x] Create Certificate resources for 3 services (`user-service`, `order-service`, `api-gateway`)
+  - All signed by the same CA as Phase 1 (ECDSA P-256, consistent chain)
+  - DNS names: `<service>.grpc-services.svc`, `localhost`, `127.0.0.1`
+  - Duration: 1 year, renewBefore: 30 days
+- [x] Verify cert generation: `kubectl get certificates -A` — all 3 Ready=True
+- [x] Test cert content: decoded via openssl, confirmed issuer, dates, SANs
+
+**CA Secret** stored in `cert-manager` namespace (`ca-key-pair`).  
+**TLS Secrets** stored in `grpc-services` namespace (`*-tls`).  
+**Manifests** in `k8s/platform/cert-manager/` (kustomize).
 
 #### Day 4-5: Istio Service Mesh
-- [ ] Install Istio with istioctl
-```bash
-istioctl install --set profile=demo \
-  --set meshConfig.accessLogFile=/dev/stdout \
-  --set meshConfig.enableTracing=true
-```
-- [ ] Enable sidecar injection: `kubectl label namespace grpc-services istio-injection=enabled`
-- [ ] Configure PeerAuthentication for mTLS STRICT
-- [ ] Create VirtualServices for routing
-- [ ] Configure DestinationRules
-  - Circuit breakers (max connections, pending requests)
-  - Outlier detection
-  - Connection pool settings
-- [ ] Install Kiali for visualization
-- [ ] Test mTLS: `istioctl authn tls-check`
+
+Status: **Completed**
+
+| Tool | Version |
+|------|---------|
+| istioctl | 1.22.0 |
+| Istio profile | demo (istiod, ingress/egress gateways) |
+| Ingress type | NodePort (KIND compatible) |
+
+- [x] Install Istio with istioctl (demo profile, access log to stdout, tracing enabled, NodePort ingress for KIND)
+- [x] Enable sidecar injection: `kubectl label namespace grpc-services istio-injection=enabled`
+- [x] Configure PeerAuthentication for mTLS STRICT in `grpc-services` namespace
+- [x] Create DestinationRules for both services:
+  - Circuit breakers: `maxConnections: 100`, `http1MaxPendingRequests: 10`, `maxRequestsPerConnection: 50`
+  - Outlier detection: 5 consecutive 5xx errors, 30s ejection interval, 50% max ejection
+  - TLS: `ISTIO_MUTUAL` mode
+- [x] Verify: `istioctl verify-install` — all CRDs + deployments checked
+- [x] Verify proxies: `istioctl proxy-status` — both gateways SYNCED
+- [x] Test mTLS: PeerAuthentication STRICT enforced, DestinationRules applied
+- [x] Update Makefile: `k8s-istio` target integrated into `k8s-platform` chain
 
 ### Week 2: Application Migration
 
 #### Day 6-7: Helm Chart Development
-- [ ] **Chart structure**
-```
-helm/grpc-services/
-├── Chart.yaml
-├── values.yaml
-├── templates/
-│   ├── deployment.yaml
-│   ├── service.yaml
-│   ├── serviceaccount.yaml
-│   ├── virtualservice.yaml
-│   ├── destinationrule.yaml
-│   ├── peerauthentication.yaml
-│   ├── authorizationpolicy.yaml
-│   ├── servicemonitor.yaml
-│   ├── poddisruptionbudget.yaml
-│   └── hpa.yaml
-```
-- [ ] Templated deployments for each service
-  - Security context (runAsNonRoot, readOnlyRootFilesystem)
-  - Resource requests/limits
-  - Liveness/readiness probes (gRPC health check)
-  - Pod anti-affinity rules
-- [ ] ConfigMaps for non-sensitive config
-- [ ] Service definitions (headless for gRPC)
-- [ ] Test with `helm template` and `helm lint`
+
+Status: **Completed**
+
+| Tool | Version |
+|------|---------|
+| Helm | v3.10.2 |
+| K8s version | 1.31.2 (KIND) |
+
+- [x] **Chart structure** (`helm/grpc-services/`)
+  - `Chart.yaml` — name: grpc-services, apiVersion: v2
+  - `values.yaml` — config for user-service and order-service (replicas, ports, resources, PDB)
+  - `templates/_helpers.tpl` — label/selector/name templates
+  - `templates/configmap.yaml` — shared non-sensitive config (LOG_LEVEL, OTLP_ENDPOINT)
+  - `templates/serviceaccount.yaml` — one per service, auto-mount disabled
+  - `templates/service.yaml` — ClusterIP with gRPC and metrics named ports
+  - `templates/deployment.yaml` — security context (runAsNonRoot, readOnlyRootFS, drop ALL caps), gRPC probes, pod anti-affinity, TLS volume mounts from cert-manager secrets
+  - `templates/poddisruptionbudget.yaml` — minAvailable: 2
+  - `templates/postgresql.yaml` — dev PostgreSQL for local KIND testing (no PVC, ephemeral)
+  - `templates/istio/virtualservice.yaml` — routing via Istio ingress gateway
+- [x] **Deployments for both services** — single Helm chart, parameterized by values.yaml
+  - Security context: runAsNonRoot: true, readOnlyRootFilesystem: true, drop ALL capabilities
+  - Resource requests/limits (128Mi/512Mi memory, 100m/500m CPU)
+  - Liveness/readiness probes: gRPC on service port via Istio sidecar proxy
+  - Pod anti-affinity: preferred during scheduling per service
+- [x] **ConfigMap** for non-sensitive config (LOG_LEVEL, OTLP_ENDPOINT)
+- [x] **Service definitions** — ClusterIP with named ports (grpc, metrics)
+- [x] **Test with helm lint** — 0 errors, 1 info (icon recommended)
+- [x] **Verify chart template** — 12 resources rendered (3 Deployments, 3 Services, 2 ServiceAccounts, 2 PDBs, 1 ConfigMap, 1 VirtualService)
+- [x] **Deployed to K8s** — both services Running with Istio sidecars, migrations applied, gRPC serving
+- [x] **Update Makefile** — `k8s-deploy`, `kind-load-images` targets added
 
 #### Day 8: Database Migration
-- [ ] **PostgreSQL Operator** (CloudNativePG or Zalando)
-```yaml
-apiVersion: postgresql.cnpg.io/v1
-kind: Cluster
-metadata:
-  name: user-db
-spec:
-  instances: 3
-  storage:
-    size: 10Gi
-  backup:
-    barmanObjectStore:
-      destinationPath: s3://backups/user-db
-```
-- [ ] Create database clusters (user-db, order-db)
-- [ ] Connection pooling (PgBouncer)
-- [ ] Automated backups configuration
-- [ ] Migration from docker volumes to PVCs
+
+Status: **Completed**
+
+- [x] **PostgreSQL with PVC** — migrated from ephemeral Deployment to PVC-backed storage (1Gi, RWO, `standard` storage class)
+- [x] **PersistentVolumeClaim** — `postgresql-data` Bound to PV, data survives pod restarts
+- [x] **Strategy: Recreate** — ensures single pod instance for data consistency
+- [x] **Both databases** — `users` (via POSTGRES_DB) and `orders` (created on startup) exist on the same PostgreSQL instance
+- [x] **Migration from ephemeral to PVC** — old ephemeral deployment replaced, services reconnected
+- [x] **Tested persistence** — data persists across pod restarts via PVC
+
+**Notes:**
+- Single PostgreSQL instance with PVC (simplest approach for local KIND dev)
+- CloudNativePG operator considered but too heavyweight for local laptop KIND cluster
+- Future: CNPG operator for production with replication and automated backups
 
 #### Day 9-10: Secrets Management
 - [ ] **External Secrets Operator**

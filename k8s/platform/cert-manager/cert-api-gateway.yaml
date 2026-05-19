@@ -1,0 +1,18 @@
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: api-gateway
+  namespace: grpc-services
+spec:
+  secretName: api-gateway-tls
+  duration: 8760h
+  renewBefore: 720h
+  issuerRef:
+    name: phase1-ca-issuer
+    kind: ClusterIssuer
+  dnsNames:
+  - api-gateway
+  - api-gateway.grpc-services.svc
+  - api-gateway.grpc-services.svc.cluster.local
+  - localhost
+  - 127.0.0.1

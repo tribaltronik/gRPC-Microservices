@@ -1,0 +1,6 @@
+apiVersion: v2
+name: grpc-services
+description: Helm chart for gRPC Microservices PoC (user-service, order-service)
+type: application
+version: 0.1.0
+appVersion: "1.0.0"

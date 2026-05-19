@@ -1,0 +1,47 @@
+global:
+  namespace: grpc-services
+  logLevel: info
+  otlpEndpoint: jaeger-collector.monitoring:4317
+  imagePullPolicy: Never
+  istioEnabled: false
+
+services:
+  user-service:
+    enabled: true
+    replicas: 3
+    version: v1
+    port: 50051
+    metricsPort: 9091
+    image: grpc-microservices-user-service
+    tag: latest
+    certSecret: user-service-tls
+    dbHost: user-db
+    resources:
+      requests:
+        cpu: 100m
+        memory: 128Mi
+      limits:
+        cpu: 500m
+        memory: 512Mi
+    pdbMinAvailable: 2
+
+  order-service:
+    enabled: true
+    replicas: 3
+    version: v1
+    port: 50052
+    metricsPort: 9092
+    image: grpc-microservices-order-service
+    tag: latest
+    certSecret: order-service-tls
+    dbHost: order-db
+    redisAddr: redis:6379
+    userSvcAddr: user-service:50051
+    resources:
+      requests:
+        cpu: 100m
+        memory: 128Mi
+      limits:
+        cpu: 500m
+        memory: 512Mi
+    pdbMinAvailable: 2

@@ -1,0 +1,18 @@
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: user-service
+  namespace: grpc-services
+spec:
+  secretName: user-service-tls
+  duration: 8760h
+  renewBefore: 720h
+  issuerRef:
+    name: phase1-ca-issuer
+    kind: ClusterIssuer
+  dnsNames:
+  - user-service
+  - user-service.grpc-services.svc
+  - user-service.grpc-services.svc.cluster.local
+  - localhost
+  - 127.0.0.1

@@ -1,0 +1,26 @@
+{{- if .Values.global.istioEnabled }}
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: grpc-services
+spec:
+  hosts:
+    - "*"
+  gateways:
+    - istio-system/istio-ingressgateway
+  http:
+    - match:
+        - port: {{ (index .Values.services "user-service").port }}
+      route:
+        - destination:
+            host: user-service
+            port:
+              number: {{ (index .Values.services "user-service").port }}
+    - match:
+        - port: {{ (index .Values.services "order-service").port }}
+      route:
+        - destination:
+            host: order-service
+            port:
+              number: {{ (index .Values.services "order-service").port }}
+{{- end }}
